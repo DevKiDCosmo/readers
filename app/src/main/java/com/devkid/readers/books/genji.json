@@ -1,0 +1,12 @@
+{
+  "title": "源氏物語",
+  "language": "jp",
+  "author": "紫式部",
+  "parts": {
+    "1": {
+      "桐壷": {
+        "content": "content/1.md"
+      }
+    }
+  }
+}
