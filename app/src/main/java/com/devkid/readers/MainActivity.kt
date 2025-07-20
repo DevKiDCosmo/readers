@@ -23,9 +23,11 @@ import androidx.compose.material3.Text
 import androidx.compose.ui.Modifier
 import com.devkid.readers.ui.theme.ReadersTheme
 import androidx.compose.runtime.*
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.core.net.toUri
 import com.devkid.readers.elements.*
+import org.json.JSONArray
 import java.io.File
 import java.io.InputStream
 import org.json.JSONObject
@@ -34,8 +36,11 @@ import java.util.zip.ZipInputStream
 data class Book(
     val name: String,
     val author: String,
+    val description: String = "",
     val part: Int,
-    val chapter: Int
+    val chapter: Int,
+    val coverImageUri: Uri? = null,
+    val language: String? = null
 )
 
 @Composable
@@ -56,7 +61,7 @@ fun bookElement(
 
         )
         Text(
-            text = author,
+            text = "by $author",
             style = MaterialTheme.typography.bodyMedium,
             modifier = Modifier
                 .padding(16.dp)
@@ -64,7 +69,7 @@ fun bookElement(
         )
 
         Text(
-            text = "Part $part, Chapter $chapter",
+            text = "Pt. $part, Ch. $chapter",
             style = MaterialTheme.typography.bodySmall,
             modifier = Modifier
                 .padding(16.dp)
@@ -75,20 +80,58 @@ fun bookElement(
 
 
 fun saveBooks(context: Context, books: List<Book>) {
+    val jsonArray = JSONArray()
+    books.forEach { book ->
+        val obj = JSONObject()
+        obj.put("name", book.name)
+        obj.put("author", book.author)
+        obj.put("description", book.description)
+        obj.put("part", book.part)
+        obj.put("chapter", book.chapter)
+        obj.put("coverImageUri", book.coverImageUri?.toString())
+        obj.put("language", book.language)
+        jsonArray.put(obj)
+    }
+    val file = File(context.filesDir, "books.json")
+    file.writeText(jsonArray.toString())
 }
 
 
-@Composable
-fun loadBooks(): List<Unit> {
-    // Hier sollte die Logik zum Laden der Bücher implementiert werden
-    // Zum Beispiel aus einer Datenbank oder einer Datei
-    return listOf(
-        bookElement(name = "Buch 1", author = "Autor 1", part = 1, chapter = 1),
+fun loadBooks(context: Context): List<Book> {
+    val file = File(context.filesDir, "books.json")
+    if (!file.exists()) return emptyList()
+    val jsonArray = JSONArray(file.readText())
+    return List(jsonArray.length()) { i ->
+        val obj = jsonArray.getJSONObject(i)
+        Book(
+            name = obj.optString("name"),
+            author = obj.optString("author"),
+            description = obj.optString("description"),
+            part = obj.optInt("part"),
+            chapter = obj.optInt("chapter"),
+            coverImageUri = obj.optString("coverImageUri").takeIf { it.isNotBlank() }?.toUri(),
+            language = obj.optString("language")
+        )
+    }
+}
+
+
+fun createBooks(
+    name: String,
+    author: String,
+    description: String,
+    coverImageUri: Uri?,
+    language: String?
+): Book {
+    return Book(
+        name = name,
+        author = author,
+        description = description,
+        part = 1,
+        chapter = 1,
+        coverImageUri = coverImageUri,
+        language = language
     )
-}
-
-fun createBooks(name: String, author: String, part: Int, chapter: Int): Book {
-    return Book(name = name, author = author, part = part, chapter = chapter)
 }
 
 
@@ -136,7 +179,7 @@ class MainActivity : ComponentActivity() {
         openDocumentLauncher.launch(arrayOf("application/zip"))
     }
 
-    fun readBookManifest(destDir: File): Book? {
+    fun readBookManifest(destDir: File): Int {
         // Search for a manifest file or a json that has the same name as the zip file
         val manifestFile = File(destDir, "manifest.json")
         val informationFile =
@@ -144,23 +187,67 @@ class MainActivity : ComponentActivity() {
 
         // Check if one of the files exists
         if (manifestFile.exists()) {
-            Toast.makeText(this, "Manifest file found", Toast.LENGTH_SHORT).show()
-            return Book(name = "Example Book", author = "Author", part = 1, chapter = 1)
-        } else if (informationFile.exists()) {
-            // JSON-Inhalt aus der Datei extrahieren
             val inputStream = informationFile.inputStream()
             val jsonContent = inputStream.bufferedReader().use { it.readText() }
             if (jsonContent.isBlank()) {
                 Toast.makeText(this, "No JSON content found", Toast.LENGTH_SHORT).show()
-                return null
+                return 1
             }
             val jsonObj = JSONObject(jsonContent)
             val name = jsonObj.optString("title").ifBlank { "Unknown Book" }
             val author = jsonObj.optString("author").ifBlank { "Unknown Author" }
-            return Book(name = name, author = author, part = 1, chapter = 1)
+            val description = jsonObj.optString("description").ifBlank { "" }
+            val coverImageUri =
+                jsonObj.optString("coverImageUri").takeIf { it.isNotBlank() }?.toUri()
+            val language = jsonObj.optString("language").takeIf { it.isNotBlank() }
+
+            val book = createBooks(name, author, description, coverImageUri, language)
+            val books = loadBooks(this).toMutableList()
+            books.add(book)
+            saveBooks(this, books)
+            return 0
+        } else if (informationFile.exists()) {
+            val inputStream = informationFile.inputStream()
+            val jsonContent = inputStream.bufferedReader().use { it.readText() }
+            if (jsonContent.isBlank()) {
+                Toast.makeText(this, "No JSON content found", Toast.LENGTH_SHORT).show()
+                return 1
+            }
+            val jsonObj = JSONObject(jsonContent)
+            val name = jsonObj.optString("title").ifBlank { "Unknown Book" }
+            val author = jsonObj.optString("author").ifBlank { "Unknown Author" }
+            val description = jsonObj.optString("description").ifBlank { "" }
+            val coverImageUri =
+                jsonObj.optString("coverImageUri").takeIf { it.isNotBlank() }?.toUri()
+            val language = jsonObj.optString("language").takeIf { it.isNotBlank() }
+
+            val book = createBooks(name, author, description, coverImageUri, language)
+            val books = loadBooks(this).toMutableList()
+            books.add(book)
+            saveBooks(this, books)
+            return 0
         }
 
-        return null;
+        return 1;
+    }
+
+    @Composable
+    fun BookListScreen(
+        modifier: Modifier = Modifier
+    ) {
+        val context = LocalContext.current
+        val books = remember { mutableStateOf(loadBooks(context)) }
+
+        Column(modifier = modifier) {
+            books.value.forEach { book ->
+                bookElement(
+                    name = book.name,
+                    author = book.author,
+                    part = book.part,
+                    chapter = book.chapter
+                )
+            }
+        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -178,10 +265,13 @@ class MainActivity : ComponentActivity() {
                 contentResolver.openInputStream(it)?.use { inputStream ->
                     unzip(inputStream, destDir)
                 }
-                readBookManifest(destDir)?.let { book ->
-                    Toast.makeText(this, "Book loaded: ${book.name}", Toast.LENGTH_SHORT).show()
-                } ?: run {
-                    Toast.makeText(this, "Failed to read book manifest", Toast.LENGTH_SHORT).show()
+                readBookManifest(destDir).let { result ->
+                    if (result == 0) {
+                        Toast.makeText(this, "Book added successfully", Toast.LENGTH_SHORT).show()
+                    } else {
+                        Toast.makeText(this, "Failed to read book manifest", Toast.LENGTH_SHORT)
+                            .show()
+                    }
                 }
             }
         }
@@ -206,9 +296,10 @@ class MainActivity : ComponentActivity() {
                             .verticalScroll(rememberScrollState())
                     ) {
                         Title(name = "Readers")
-
-                        loadBooks();
                     }
+                    BookListScreen(
+                        modifier = Modifier.padding(innerPadding)
+                    )
                 }
             }
         }
