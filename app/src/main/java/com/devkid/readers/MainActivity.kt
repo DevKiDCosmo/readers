@@ -10,10 +10,15 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.FloatingActionButton
@@ -23,7 +28,6 @@ import androidx.compose.material3.Text
 import androidx.compose.ui.Modifier
 import com.devkid.readers.ui.theme.ReadersTheme
 import androidx.compose.runtime.*
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.core.net.toUri
 import com.devkid.readers.elements.*
@@ -31,7 +35,20 @@ import org.json.JSONArray
 import java.io.File
 import java.io.InputStream
 import org.json.JSONObject
+import androidx.compose.ui.text.style.TextAlign
 import java.util.zip.ZipInputStream
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowForward
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Icon
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.unit.dp
 
 data class Book(
     val name: String,
@@ -39,43 +56,61 @@ data class Book(
     val description: String = "",
     val part: Int,
     val chapter: Int,
+    val uri: Uri,
     val coverImageUri: Uri? = null,
     val language: String? = null
 )
 
 @Composable
 fun bookElement(
-    name: String,
-    author: String,
-    part: Int,
-    chapter: Int,
-    modifier: Modifier = Modifier
+    name: String, author: String, part: Int, chapter: Int, modifier: Modifier = Modifier
 ) {
-    Row(modifier = modifier) {
-        Text(
-            text = name,
-            style = MaterialTheme.typography.titleMedium,
-            modifier = Modifier
-                .padding(16.dp)
-                .weight(1f)
+    Button(
+        modifier = modifier
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        onClick = { /* Handle book click */ },
+        shape = RoundedCornerShape(16.dp),
+        elevation = ButtonDefaults.buttonElevation(defaultElevation = 8.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(
+                modifier = Modifier
+                    .weight(2f),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = name,
+                    style = MaterialTheme.typography.titleMedium.copy(fontFamily = FontFamily.Serif),
+                    modifier = Modifier.padding(end = 4.dp)
+                )
+                Text(
+                    text = "by $author",
+                    style = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Serif)
+                )
+            }
 
-        )
-        Text(
-            text = "by $author",
-            style = MaterialTheme.typography.bodyMedium,
-            modifier = Modifier
-                .padding(16.dp)
-                .weight(1f)
-        )
+            Text(
+                text = "Pt. $part, Ch. $chapter",
+                style = MaterialTheme.typography.bodyMedium,
+                textAlign = TextAlign.End,
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(start = 8.dp)
+            )
 
-        Text(
-            text = "Pt. $part, Ch. $chapter",
-            style = MaterialTheme.typography.bodySmall,
-            modifier = Modifier
-                .padding(16.dp)
-                .weight(1f)
-        )
+            Icon(
+                imageVector = Icons.Default.ArrowForward,
+                contentDescription = "Open",
+                modifier = Modifier
+                    .size(20.dp)
+                    .padding(start = 4.dp)
+            )
+        }
     }
+
 }
 
 
@@ -90,6 +125,7 @@ fun saveBooks(context: Context, books: List<Book>) {
         obj.put("chapter", book.chapter)
         obj.put("coverImageUri", book.coverImageUri?.toString())
         obj.put("language", book.language)
+        obj.put("uri", book.uri.toString())
         jsonArray.put(obj)
     }
     val file = File(context.filesDir, "books.json")
@@ -110,7 +146,8 @@ fun loadBooks(context: Context): List<Book> {
             part = obj.optInt("part"),
             chapter = obj.optInt("chapter"),
             coverImageUri = obj.optString("coverImageUri").takeIf { it.isNotBlank() }?.toUri(),
-            language = obj.optString("language")
+            language = obj.optString("language").takeIf { it.isNotBlank() },
+            uri = obj.optString("uri").takeIf { it.isNotBlank() }?.toUri() ?: Uri.EMPTY
         )
     }
 }
@@ -120,6 +157,7 @@ fun createBooks(
     name: String,
     author: String,
     description: String,
+    uri: Uri,
     coverImageUri: Uri?,
     language: String?
 ): Book {
@@ -130,10 +168,23 @@ fun createBooks(
         part = 1,
         chapter = 1,
         coverImageUri = coverImageUri,
-        language = language
+        language = language,
+        uri = uri
     )
 }
 
+fun checkIfBookExists(book: List<Book>): List<String> {
+    // Check if the loaded books still exist in the file system
+    val missingBooks = mutableListOf<String>()
+    for (i in book.indices) {
+        val bookUri = book[i].uri
+        if (!File(bookUri.path ?: "").exists()) {
+            // If the file does not exist, return the URI to remove it from the list
+            missingBooks.add(book[i].uri.toString())
+        }
+    }
+    return missingBooks
+}
 
 class MainActivity : ComponentActivity() {
 
@@ -175,18 +226,18 @@ class MainActivity : ComponentActivity() {
     private lateinit var openDocumentLauncher: ActivityResultLauncher<Array<String>>
 
     fun openBook() {
-        // Jetzt sicher nutzbar!
         openDocumentLauncher.launch(arrayOf("application/zip"))
     }
 
     fun readBookManifest(destDir: File): Int {
-        // Search for a manifest file or a json that has the same name as the zip file
-        val manifestFile = File(destDir, "manifest.json")
-        val informationFile =
-            File(destDir, (getFileNameFromUri(destDir.toUri()) ?: "manifest") + ".json")
+        val jsonFiles = destDir.listFiles()?.filter { it.extension == "json" } ?: return 1
+        val informationFile = if (jsonFiles.size == 1) {
+            jsonFiles.first()
+        } else {
+            jsonFiles.firstOrNull { it.name == "manifest.json" } ?: return 1
+        }
 
-        // Check if one of the files exists
-        if (manifestFile.exists()) {
+        if (informationFile.exists()) {
             val inputStream = informationFile.inputStream()
             val jsonContent = inputStream.bufferedReader().use { it.readText() }
             if (jsonContent.isBlank()) {
@@ -201,27 +252,8 @@ class MainActivity : ComponentActivity() {
                 jsonObj.optString("coverImageUri").takeIf { it.isNotBlank() }?.toUri()
             val language = jsonObj.optString("language").takeIf { it.isNotBlank() }
 
-            val book = createBooks(name, author, description, coverImageUri, language)
-            val books = loadBooks(this).toMutableList()
-            books.add(book)
-            saveBooks(this, books)
-            return 0
-        } else if (informationFile.exists()) {
-            val inputStream = informationFile.inputStream()
-            val jsonContent = inputStream.bufferedReader().use { it.readText() }
-            if (jsonContent.isBlank()) {
-                Toast.makeText(this, "No JSON content found", Toast.LENGTH_SHORT).show()
-                return 1
-            }
-            val jsonObj = JSONObject(jsonContent)
-            val name = jsonObj.optString("title").ifBlank { "Unknown Book" }
-            val author = jsonObj.optString("author").ifBlank { "Unknown Author" }
-            val description = jsonObj.optString("description").ifBlank { "" }
-            val coverImageUri =
-                jsonObj.optString("coverImageUri").takeIf { it.isNotBlank() }?.toUri()
-            val language = jsonObj.optString("language").takeIf { it.isNotBlank() }
-
-            val book = createBooks(name, author, description, coverImageUri, language)
+            val book =
+                createBooks(name, author, description, destDir.toUri(), coverImageUri, language)
             val books = loadBooks(this).toMutableList()
             books.add(book)
             saveBooks(this, books)
@@ -233,40 +265,63 @@ class MainActivity : ComponentActivity() {
 
     @Composable
     fun BookListScreen(
-        modifier: Modifier = Modifier
+        books: List<Book>, modifier: Modifier = Modifier
     ) {
-        val context = LocalContext.current
-        val books = remember { mutableStateOf(loadBooks(context)) }
-
         Column(modifier = modifier) {
-            books.value.forEach { book ->
-                bookElement(
-                    name = book.name,
-                    author = book.author,
-                    part = book.part,
-                    chapter = book.chapter
+            if (books.isEmpty()) {
+                Text(
+                    text = "No books downloaded yet.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier
+                        .padding(
+                            start = 16.dp, top = 0.dp, end = 16.dp, bottom = 0.dp
+                        )
+                        .then(Modifier.padding(8.dp))
                 )
+            } else {
+                books.forEach { book ->
+                    bookElement(
+                        name = book.name,
+                        author = book.author,
+                        part = book.part,
+                        chapter = book.chapter
+                    )
+                }
             }
         }
     }
 
+    private val booksState = mutableStateOf<List<Book>>(emptyList())
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        booksState.value = loadBooks(this)
+
         openDocumentLauncher = registerForActivityResult(
             ActivityResultContracts.OpenDocument()
         ) { uri ->
             uri?.let {
                 val zipName = getFileNameFromUri(it) ?: "book"
-                val destDir = File(
+                var destDir = File(
                     getExternalFilesDir(android.os.Environment.DIRECTORY_DOCUMENTS),
                     "books/$zipName"
                 )
+                var counter = 1
+                while (destDir.exists()) {
+                    destDir = File(
+                        getExternalFilesDir(android.os.Environment.DIRECTORY_DOCUMENTS),
+                        "books/${zipName}_$counter"
+                    )
+                    counter++
+                }
                 destDir.mkdirs()
                 contentResolver.openInputStream(it)?.use { inputStream ->
                     unzip(inputStream, destDir)
                 }
                 readBookManifest(destDir).let { result ->
                     if (result == 0) {
+                        booksState.value = loadBooks(this) // <-- Liste neu laden!
+
                         Toast.makeText(this, "Book added successfully", Toast.LENGTH_SHORT).show()
                     } else {
                         Toast.makeText(this, "Failed to read book manifest", Toast.LENGTH_SHORT)
@@ -276,30 +331,46 @@ class MainActivity : ComponentActivity() {
             }
         }
 
+        checkIfBookExists(booksState.value).let { missingBooks ->
+            if (missingBooks.isNotEmpty()) {
+                val updatedBooks = booksState.value.filterNot { book ->
+                    missingBooks.contains(book.uri.toString())
+                }
+                booksState.value = updatedBooks
+                saveBooks(this, updatedBooks)
+                Toast.makeText(
+                    this,
+                    "Removed missing books: ${missingBooks.joinToString(", ")}",
+                    Toast.LENGTH_LONG
+                ).show()
+            }
+        }
+
         enableEdgeToEdge()
         setContent {
             ReadersTheme {
                 Scaffold(
-                    modifier = Modifier.fillMaxSize(),
-                    floatingActionButton = {
+                    modifier = Modifier.fillMaxSize(), floatingActionButton = {
                         // Plus-Button zum Auswählen einer ZIP-Datei
                         FloatingActionButton(onClick = {
                             openBook()
                         }) {
                             Text("+")
                         }
-                    }
-                ) { innerPadding ->
+                    }) { innerPadding ->
                     Column(
                         modifier = Modifier
                             .padding(innerPadding)
                             .verticalScroll(rememberScrollState())
                     ) {
                         Title(name = "Readers")
+                        BookListScreen(
+                            books = booksState.value,
+                            modifier = Modifier
+                                .padding(innerPadding)
+                                .then(Modifier.fillMaxSize())
+                        )
                     }
-                    BookListScreen(
-                        modifier = Modifier.padding(innerPadding)
-                    )
                 }
             }
         }
