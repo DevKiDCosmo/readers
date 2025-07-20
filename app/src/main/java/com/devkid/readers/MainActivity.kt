@@ -10,15 +10,22 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.VisibilityThreshold
+import androidx.compose.animation.core.spring
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.FloatingActionButton
@@ -38,17 +45,27 @@ import org.json.JSONObject
 import androidx.compose.ui.text.style.TextAlign
 import java.util.zip.ZipInputStream
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.DismissDirection
+import androidx.compose.material.DismissValue
+import androidx.compose.material.ExperimentalMaterialApi
+import androidx.compose.material.SwipeToDismiss
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowForward
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.rememberDismissState
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.IntOffset
+
 
 data class Book(
     val name: String,
@@ -61,56 +78,99 @@ data class Book(
     val language: String? = null
 )
 
+@OptIn(ExperimentalMaterialApi::class, ExperimentalMaterialApi::class)
 @Composable
 fun bookElement(
-    name: String, author: String, part: Int, chapter: Int, modifier: Modifier = Modifier
+    name: String,
+    author: String,
+    part: Int,
+    chapter: Int,
+    onClick: () -> Unit,
+    onDelete: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
-    Button(
-        modifier = modifier
-            .padding(horizontal = 16.dp, vertical = 8.dp),
-        onClick = { /* Handle book click */ },
-        shape = RoundedCornerShape(16.dp),
-        elevation = ButtonDefaults.buttonElevation(defaultElevation = 8.dp)
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Row(
+    val dismissState = rememberDismissState(
+        confirmStateChange = { dismissValue ->
+            if (dismissValue == DismissValue.DismissedToEnd) {
+                onDelete()
+                true
+            } else {
+                false
+            }
+        }
+    )
+
+    SwipeToDismiss(
+        state = dismissState,
+        directions = setOf(DismissDirection.StartToEnd),
+        background = {
+            val shape = RoundedCornerShape(16.dp)
+            Box(
                 modifier = Modifier
-                    .weight(2f),
-                verticalAlignment = Alignment.CenterVertically
+                    .padding(horizontal = 16.dp, vertical = 8.dp) // gleich wie Button
+                    .fillMaxWidth()
+                    .height(IntrinsicSize.Min) // an Button-Höhe anpassen
+                    .clip(shape)
+                    .background(Color.Red),
+                contentAlignment = Alignment.CenterStart
             ) {
-                Text(
-                    text = name,
-                    style = MaterialTheme.typography.titleMedium.copy(fontFamily = FontFamily.Serif),
-                    modifier = Modifier.padding(end = 4.dp)
-                )
-                Text(
-                    text = "by $author",
-                    style = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Serif)
+                Icon(
+                    imageVector = Icons.Default.Delete,
+                    contentDescription = "Delete",
+                    tint = Color.White,
+                    modifier = Modifier
+                        .padding(start = 20.dp)
+                        .size(24.dp)
                 )
             }
+        },
+        dismissContent = {
+            Button(
+                modifier = modifier
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                onClick = onClick,
+                shape = RoundedCornerShape(16.dp),
+                elevation = ButtonDefaults.buttonElevation(defaultElevation = 8.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(
+                        modifier = Modifier.weight(2f),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = name,
+                            style = MaterialTheme.typography.titleMedium.copy(fontFamily = FontFamily.Serif),
+                            modifier = Modifier.padding(end = 4.dp)
+                        )
+                        Text(
+                            text = "by $author",
+                            style = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Serif)
+                        )
+                    }
 
-            Text(
-                text = "Pt. $part, Ch. $chapter",
-                style = MaterialTheme.typography.bodyMedium,
-                textAlign = TextAlign.End,
-                modifier = Modifier
-                    .weight(1f)
-                    .padding(start = 8.dp)
-            )
+                    Text(
+                        text = "Pt. $part, Ch. $chapter",
+                        style = MaterialTheme.typography.bodyMedium,
+                        textAlign = TextAlign.End,
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(start = 8.dp)
+                    )
 
-            Icon(
-                imageVector = Icons.Default.ArrowForward,
-                contentDescription = "Open",
-                modifier = Modifier
-                    .size(20.dp)
-                    .padding(start = 4.dp)
-            )
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                        contentDescription = "Open",
+                        modifier = Modifier
+                            .size(20.dp)
+                            .padding(start = 4.dp)
+                    )
+                }
+            }
         }
-    }
-
+    )
 }
 
 
@@ -267,24 +327,65 @@ class MainActivity : ComponentActivity() {
     fun BookListScreen(
         books: List<Book>, modifier: Modifier = Modifier
     ) {
-        Column(modifier = modifier) {
+        LazyColumn(
+            modifier = modifier
+        ) {
             if (books.isEmpty()) {
-                Text(
-                    text = "No books downloaded yet.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    modifier = Modifier
-                        .padding(
-                            start = 16.dp, top = 0.dp, end = 16.dp, bottom = 0.dp
-                        )
-                        .then(Modifier.padding(8.dp))
-                )
+                item {
+                    Text(
+                        text = "No books downloaded yet.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier
+                            .padding(
+                                start = 16.dp, top = 0.dp, end = 16.dp, bottom = 0.dp
+                            )
+                            .then(Modifier.padding(8.dp))
+                    )
+                    Text(
+                        text = "Click the + button to add a book.",
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier
+                            .padding(
+                                start = 16.dp, top = 0.dp, end = 16.dp, bottom = 0.dp
+                            )
+                            .then(Modifier.padding(8.dp))
+                    )
+                }
             } else {
-                books.forEach { book ->
+                items(books, key = { it.uri }) { book ->
                     bookElement(
                         name = book.name,
                         author = book.author,
                         part = book.part,
-                        chapter = book.chapter
+                        chapter = book.chapter,
+                        onClick = {
+                            Toast.makeText(
+                                this@MainActivity,
+                                "Opening ${book.name}",
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        },
+                        onDelete = {
+                            val updatedBooks = booksState.value.filterNot { it.uri == book.uri }
+                            booksState.value = updatedBooks
+                            saveBooks(this@MainActivity, updatedBooks)
+
+                            // Delete unzipped book directory
+                            val bookDir = File(
+                                getExternalFilesDir(android.os.Environment.DIRECTORY_DOCUMENTS),
+                                "books/${book.name}"
+                            )
+                            if (bookDir.exists()) {
+                                bookDir.deleteRecursively()
+                            }
+
+                            Toast.makeText(
+                                this@MainActivity,
+                                "Deleted ${book.name}",
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        },
+                        // Want to have a smooth animation when the book is removed
                     )
                 }
             }
@@ -361,7 +462,6 @@ class MainActivity : ComponentActivity() {
                     Column(
                         modifier = Modifier
                             .padding(innerPadding)
-                            .verticalScroll(rememberScrollState())
                     ) {
                         Title(name = "Readers")
                         BookListScreen(
